@@ -1,13 +1,14 @@
 import yaml
 from typing import Tuple, Set, Dict
+from extra.assembly.assembly import AssemblyInstruction
 from tinygrad import dtypes
-from tinygrad.codegen.assembly import AssemblyCodegen, Register
+from tinygrad.codegen.assembly import AssemblyCodegen, Register # where did AssemblyCodegen get moved to or deleted from?
 from tinygrad.codegen.linearizer import UOps
 from tinygrad.ops import BinaryOps, UnaryOps, TernaryOps
 from tinygrad.runtime.ops_gpu import ROCM_LLVM_PATH
 
 # ugh, is this really needed?
-from extra.helpers import enable_early_exec
+from extra.helpers import enable_early_exec # Q: what's wrong with this?
 early_exec = enable_early_exec()
 
 boilerplate_start = """
@@ -34,7 +35,7 @@ class RDNACodegen(AssemblyCodegen):
   sin_is_sin2pi: bool = True
   no_div: bool = True
 
-  def specialize(self, asm) -> Tuple[str, str]:
+  def specialize(self, asm: list[AssemblyInstruction]) -> Tuple[str, str]:
     args = []
     for i,b in enumerate(self.bufs): args.append({'.address_space': 'global', '.name': f'buf_{i}', '.offset': i*8, '.size': 8, '.type_name': b.dtype.name+"*", '.value_kind': 'global_buffer'})
     ins = []
@@ -61,32 +62,7 @@ class RDNACodegen(AssemblyCodegen):
     def reg_out(x):
       return rtor[x]
     for uop, out, vin, arg in asm:
-      if uop == UOps.DEFINE_REGISTER:
-        if arg[0][0] in [dtypes.uint32, dtypes.uint64, dtypes.int64, dtypes.int32, dtypes.float32, dtypes.float.vec(4)]:
-          for i in range(arg[2]):
-            # TODO: Re-use gaps created by this to avoid wasting registers
-            align = int(arg[0][0].itemsize / 4)
-            if arg[0][1]:
-              s_cnt += s_cnt % align
-              reg_name = f"s[{s_cnt}:{s_cnt + align - 1}]" if align > 1 else f"s{s_cnt}"
-              s_cnt += align
-            else:
-              v_cnt += v_cnt % align
-              reg_name = f"v[{v_cnt}:{v_cnt + align - 1}]" if align > 1 else f"v{v_cnt}"
-              v_cnt += align
-            rtor[Register(f"%{arg[1]}{i}", *arg[0])] = reg_name
-
-            if arg[0][0] == dtypes.float.vec(4):
-              for off in range(4):
-                reg_name = f"s{s_cnt-align+off}" if arg[0][1] else f"v{v_cnt-align+off}"
-                rtor[Register(f"%{arg[1]}{i}", dtypes.float, False, off=off)] = reg_name
-        elif arg[0][0] == dtypes.bool:
-          for i in range(arg[2]):
-            reg_name = "scc" if arg[0][1] else "vcc_lo" # `_lo` suffix since we're running wavefront_size=32
-            rtor[Register(f"%{arg[1]}{i}", *arg[0])] = reg_name
-        else:
-          raise NotImplementedError("DEFINE_REGISTER not implemented for arg: ", arg)
-      elif uop == UOps.SPECIAL:
+      if uop == UOps.SPECIAL:
         if arg.startswith('buf'):
           i = int(arg[3:])
           ins.append(f's_load_b64 {reg_out(out)}, s[0:1], {i*8}')
@@ -137,10 +113,7 @@ class RDNACodegen(AssemblyCodegen):
         for r in out.subregs(): pend_regs.add(r)
       elif uop == UOps.STORE:
         ins.append(f'global_store_{"b128" if vin[1].dtype == dtypes.float.vec(4) else "b32"} {reg_in(vin[2])}, {reg_in(vin[1])}, {reg_in(vin[0])} offset:{arg[0]}')
-      elif uop == UOps.LABEL:
-        ins.append(f"{arg}:")
-      elif uop == UOps.COND_BRANCH:
-        ins.append(f"s_cbranch_scc{'1' if arg[1] else '0'} {arg[0]}")
+        # ins.append(f"s_cbranch_scc{'1' if arg[1] else '0'} {arg[0]}")
       elif uop == UOps.CAST:
         if vin[0].dtype == dtypes.bool:
           if out.dtype == dtypes.float32:

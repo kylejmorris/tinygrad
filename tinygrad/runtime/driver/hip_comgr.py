@@ -14,7 +14,7 @@ def _get_comgr_data(data_set, data_type):
   return bytes(dat)
 
 # AMD_COMGR_SAVE_TEMPS=1 AMD_COMGR_REDIRECT_LOGS=stdout AMD_COMGR_EMIT_VERBOSE_LOGS=1
-def compile_hip(prg:str, arch="gfx1100", asm=False) -> bytes:
+def compile_hip(prg:str, arch="gfx1100", asm=False) -> bytes: # call with asm=True to output machine code; 
   check(comgr.amd_comgr_create_action_info(ctypes.byref(action_info := comgr.amd_comgr_action_info_t())))
   check(comgr.amd_comgr_action_info_set_language(action_info, comgr.AMD_COMGR_LANGUAGE_HIP))
   check(comgr.amd_comgr_action_info_set_isa_name(action_info, b"amdgcn-amd-amdhsa--" + arch.encode()))
